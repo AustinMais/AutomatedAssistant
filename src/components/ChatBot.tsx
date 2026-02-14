@@ -20,9 +20,11 @@ type ChatBotProps = {
   theme?: ChatTheme;
   /** When true, uses minimal styling for embedding: no shadow, transparent background, reduced padding. */
   embedded?: boolean;
+  /** When true, renders as a floating widget: small icon at bottom, expands to chat panel above. No padding, clean look. */
+  floating?: boolean;
 };
 
-export default function ChatBot({ theme = 'austinmais', embedded = false }: ChatBotProps) {
+export default function ChatBot({ theme = 'austinmais', embedded = false, floating = false }: ChatBotProps) {
   const [input, setInput] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const { messages, sendMessage, status, error } = useChat();
@@ -43,6 +45,166 @@ export default function ChatBot({ theme = 'austinmais', embedded = false }: Chat
     setIsExpanded(true);
   };
 
+  const isFloating = floating;
+
+  // Floating mode: icon + popover
+  if (isFloating) {
+    return (
+      <div data-chat-theme={theme} className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-0">
+        {/* Chat panel — above icon when expanded */}
+        {isExpanded && (
+          <div
+            className="mb-2 flex w-[360px] flex-col overflow-hidden rounded-lg border shadow-lg transition-all"
+            style={{
+              borderColor: 'var(--chat-border)',
+              backgroundColor: 'var(--chat-container-bg)',
+              maxHeight: 'min(500px, 80vh)',
+            }}
+          >
+            {/* Header — no padding */}
+            <button
+              type="button"
+              onClick={() => setIsExpanded(false)}
+              className="flex w-full cursor-pointer select-none items-center justify-between border-b px-2 py-1.5 transition-opacity hover:opacity-95"
+              style={{
+                background: 'linear-gradient(to right, var(--chat-header-start), var(--chat-header-end))',
+                color: 'var(--chat-header-text)',
+                borderColor: 'var(--chat-border)',
+              }}
+            >
+              <div className="text-left">
+                <h2 className="text-sm font-bold">Austin&apos;s Assistant</h2>
+                <p className="text-xs opacity-90">Ask about stack or rates</p>
+              </div>
+              <span className="text-lg" aria-hidden>×</span>
+            </button>
+
+            {/* Messages — minimal horizontal clearance so bubbles don't touch edges */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2">
+              <div className="space-y-4">
+                {error && (
+                  <div
+                    className="rounded-none px-3 py-2 text-sm"
+                    style={{ backgroundColor: 'var(--chat-error-bg)', color: 'var(--chat-error-text)' }}
+                  >
+                    {error.message}
+                  </div>
+                )}
+                {messages.length === 0 && !error && (
+                  <div className="py-6 text-center text-sm" style={{ color: 'var(--chat-placeholder)' }}>
+                    <p>Go ahead, grill me.</p>
+                    <p className="text-xs">&quot;What is Austin&apos;s favorite tech stack?&quot;</p>
+                  </div>
+                )}
+                {messages.map((m) => (
+                  <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[85%] rounded-lg px-3 py-2 ${
+                        m.role === 'assistant' ? 'break-words leading-relaxed [&_*]:first:mt-0 [&_*]:last:mb-0' : ''
+                      }`}
+                      style={
+                        m.role === 'user'
+                          ? { backgroundColor: 'var(--chat-user-bubble)', color: 'var(--chat-user-text)' }
+                          : { backgroundColor: 'var(--chat-assistant-bubble)', color: 'var(--chat-assistant-text)' }
+                      }
+                    >
+                      {m.role === 'assistant' ? (
+                        <div className="chat-assistant-content text-sm [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5">
+                          <ReactMarkdown
+                            components={{
+                              p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
+                              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                              em: ({ children }) => <em className="italic">{children}</em>,
+                              ul: ({ children }) => <ul className="list-disc pl-4 my-1.5">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal pl-4 my-1.5">{children}</ol>,
+                              li: ({ children }) => <li className="my-0.5">{children}</li>,
+                              h1: ({ children }) => <h1 className="text-base font-semibold mt-2 mb-1">{children}</h1>,
+                              h2: ({ children }) => <h2 className="text-sm font-semibold mt-2 mb-1">{children}</h2>,
+                              h3: ({ children }) => <h3 className="text-sm font-semibold mt-1.5 mb-0.5">{children}</h3>,
+                            }}
+                          >
+                            {getMessageText(m)}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        getMessageText(m)
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div
+                      className="rounded-lg px-3 py-2 text-sm animate-pulse"
+                      style={{ backgroundColor: 'var(--chat-loading-bubble)', color: 'var(--chat-loading-text)' }}
+                    >
+                      Thinking...
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+
+            {/* Input — minimal padding */}
+            <form
+              onSubmit={handleSubmit}
+              className="flex gap-2 border-t px-2 py-1.5"
+              style={{ borderColor: 'var(--chat-border)' }}
+            >
+              <input
+                className="chat-input flex-1 rounded border px-2 py-1.5 text-sm focus:outline-none"
+                style={{
+                  borderColor: 'var(--chat-input-border)',
+                  backgroundColor: 'var(--chat-container-bg)',
+                  color: 'var(--chat-assistant-text)',
+                }}
+                value={input}
+                placeholder="Type a message..."
+                onChange={(e) => setInput(e.target.value)}
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !input.trim()}
+                className="chat-send-btn shrink-0 px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50"
+                style={{ backgroundColor: 'var(--chat-button)' }}
+              >
+                Send
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Floating icon button */}
+        <button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-lg transition hover:scale-105"
+          style={{
+            background: 'linear-gradient(to right, var(--chat-header-start), var(--chat-header-end))',
+            color: 'var(--chat-header-text)',
+          }}
+          aria-label={isExpanded ? 'Close chat' : 'Open chat'}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
+
+  // Inline/card mode
   return (
     <div
       data-chat-theme={theme}
