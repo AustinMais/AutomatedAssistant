@@ -47,10 +47,13 @@ export default function ChatBot({ theme = 'austinmais', embedded = false, floati
 
   const isFloating = floating;
 
-  // Floating mode: icon + popover
+  // Floating mode: icon + popover — no wrapper box; pointer-events-none so only icon/panel capture clicks
   if (isFloating) {
     return (
-      <div data-chat-theme={theme} className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-0">
+      <div
+        data-chat-theme={theme}
+        className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-0 pointer-events-none [&>*]:pointer-events-auto"
+      >
         {/* Chat panel — above icon when expanded */}
         {isExpanded && (
           <div
