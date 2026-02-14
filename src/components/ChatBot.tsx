@@ -54,11 +54,12 @@ export default function ChatBot({ theme = 'austinmais', embedded = false, floati
         {/* Chat panel — above icon when expanded */}
         {isExpanded && (
           <div
-            className="mb-2 flex w-[360px] flex-col overflow-hidden rounded-lg border shadow-lg transition-all"
+            className="mb-2 flex w-[420px] flex-col overflow-hidden rounded-lg border shadow-lg transition-all"
             style={{
               borderColor: 'var(--chat-border)',
               backgroundColor: 'var(--chat-container-bg)',
-              maxHeight: 'min(500px, 80vh)',
+              height: 'min(640px, 85vh)',
+              maxHeight: 'min(640px, 85vh)',
             }}
           >
             {/* Header — no padding */}
@@ -79,8 +80,8 @@ export default function ChatBot({ theme = 'austinmais', embedded = false, floati
               <span className="text-lg" aria-hidden>×</span>
             </button>
 
-            {/* Messages — minimal horizontal clearance so bubbles don't touch edges */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2">
+            {/* Messages — expands to fill space, scrolls for long responses */}
+            <div className="flex min-h-[360px] flex-1 flex-col overflow-y-auto px-2">
               <div className="space-y-4">
                 {error && (
                   <div
@@ -99,9 +100,9 @@ export default function ChatBot({ theme = 'austinmais', embedded = false, floati
                 {messages.map((m) => (
                   <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div
-                      className={`max-w-[85%] rounded-lg px-3 py-2 ${
-                        m.role === 'assistant' ? 'break-words leading-relaxed [&_*]:first:mt-0 [&_*]:last:mb-0' : ''
-                      }`}
+                      className={`rounded-lg px-3 py-2 ${
+                        m.role === 'user' ? 'max-w-[85%]' : 'max-w-full'
+                      } ${m.role === 'assistant' ? 'break-words leading-relaxed [&_*]:first:mt-0 [&_*]:last:mb-0' : ''}`}
                       style={
                         m.role === 'user'
                           ? { backgroundColor: 'var(--chat-user-bubble)', color: 'var(--chat-user-text)' }
