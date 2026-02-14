@@ -76,56 +76,68 @@ function formatExperienceListForPrompt(experience: Array<Record<string, unknown>
     .join('; ');
 }
 
+const FRIENDLY_ERROR_SYSTEM = `You are Austin's Automated Assistant. Something has gone wrong on your end—you cannot access your knowledge base or process requests normally right now. The user just sent a message. Respond briefly and warmly in 1-2 short paragraphs: acknowledge you're having technical difficulties, apologize, and ask them to try again in a few minutes. Stay in character. Use a conversational tone. Do not mention JSON, APIs, error codes, or technical details.`;
+
+async function streamFriendlyErrorResponse(messages: unknown): Promise<Response> {
+  const safeMessages = Array.isArray(messages) && messages.length > 0 ? messages : [{ role: 'user' as const, content: 'Hi' }];
+  const result = streamText({
+    model: openai('gpt-4o-mini'),
+    system: FRIENDLY_ERROR_SYSTEM,
+    messages: await convertToModelMessages(safeMessages),
+  });
+  return result.toUIMessageStreamResponse();
+}
+
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  let messages: unknown;
+  try {
+    const body = await req.json();
+    messages = body?.messages ?? [];
+  } catch {
+    messages = [{ role: 'user' as const, content: 'Hi' }];
+  }
 
   let portfolioContext: string;
   try {
     portfolioContext = await fetchPortfolioContext();
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[chat] Portfolio context fetch failed:', message);
-    return new Response(
-      JSON.stringify({
-        error: 'Portfolio context unavailable',
-        detail: process.env.NODE_ENV === 'development' ? message : undefined,
-      }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } }
-    );
+    console.error('[chat] Portfolio context fetch failed:', err);
+    return streamFriendlyErrorResponse(messages);
   }
 
-  const askedYear = getAskedYear(messages);
-  let contextForPrompt = portfolioContext;
-  if (askedYear !== null) {
-    try {
-      const parsed = JSON.parse(portfolioContext) as Record<string, unknown>;
-      filterExperienceByYear(parsed, askedYear);
-      contextForPrompt = JSON.stringify(parsed, null, 2);
-    } catch {
-      // keep original context if parse/filter fails
+  try {
+    const askedYear = getAskedYear(messages as Parameters<typeof getAskedYear>[0]);
+    let contextForPrompt = portfolioContext;
+    if (askedYear !== null) {
+      try {
+        const parsed = JSON.parse(portfolioContext) as Record<string, unknown>;
+        filterExperienceByYear(parsed, askedYear);
+        contextForPrompt = JSON.stringify(parsed, null, 2);
+      } catch {
+        // keep original context if parse/filter fails
+      }
     }
-  }
 
-  let yearFilterNote = '';
-  if (askedYear !== null) {
-    try {
-      const parsed = JSON.parse(contextForPrompt) as Record<string, unknown>;
-      const resume = parsed.resume as Record<string, unknown> | undefined;
-      const experience = (resume?.experience ?? []) as Array<Record<string, unknown>>;
-      const count = experience.length;
-      const listText =
-        count > 0
-          ? ` You must list every one in this exact order: ${formatExperienceListForPrompt(experience)}.`
-          : '';
-      yearFilterNote = `\nThe "resume" → "experience" array below has been filtered to entries whose period includes ${askedYear}. It contains exactly ${count} entry(ies).${listText} Write a full block (## Role, Company, Period, Description, then paragraphs) for each entry. Do not omit any entry.`;
-    } catch {
-      yearFilterNote = `\nThe "resume" → "experience" array below has been filtered to only entries whose period includes the year ${askedYear}. List every entry in that array; do not omit any.`;
+    let yearFilterNote = '';
+    if (askedYear !== null) {
+      try {
+        const parsed = JSON.parse(contextForPrompt) as Record<string, unknown>;
+        const resume = parsed.resume as Record<string, unknown> | undefined;
+        const experience = (resume?.experience ?? []) as Array<Record<string, unknown>>;
+        const count = experience.length;
+        const listText =
+          count > 0
+            ? ` You must list every one in this exact order: ${formatExperienceListForPrompt(experience)}.`
+            : '';
+        yearFilterNote = `\nThe "resume" → "experience" array below has been filtered to entries whose period includes ${askedYear}. It contains exactly ${count} entry(ies).${listText} Write a full block (## Role, Company, Period, Description, then paragraphs) for each entry. Do not omit any entry.`;
+      } catch {
+        yearFilterNote = `\nThe "resume" → "experience" array below has been filtered to only entries whose period includes the year ${askedYear}. List every entry in that array; do not omit any.`;
+      }
     }
-  }
 
-  const result = streamText({
-    model: openai('gpt-4o-mini'),
-    system: `You are Austin's Automated Assistant. Answer questions using ONLY the following live data from Austin Mais's consulting site. Do not invent, guess, or substitute any details. Every company name, role, period, and description must come exactly from the JSON below.${yearFilterNote}
+    const result = streamText({
+      model: openai('gpt-4o-mini'),
+      system: `You are Austin's Automated Assistant. Answer questions using ONLY the following live data from Austin Mais's consulting site. Do not invent, guess, or substitute any details. Every company name, role, period, and description must come exactly from the JSON below.${yearFilterNote}
 
 Critical for experience: The work history is in the "resume" section under "experience" (an array). Use ONLY those entries—the exact companies, roles, periods, and descriptions listed there. Do not add, remove, or replace any employer or role. If the JSON has 5 experience entries, list all 5; if it has 1, list that 1; if it has 0, say there are no entries for that year. Never use placeholder or example companies (e.g. "Acme Corp") or roles that are not in the data.
 
@@ -163,8 +175,12 @@ Data is from these API sections:
 
 Portfolio data (JSON):
 ${contextForPrompt}`,
-    messages: await convertToModelMessages(messages),
-  });
+      messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
+    });
 
-  return result.toUIMessageStreamResponse();
+    return result.toUIMessageStreamResponse();
+  } catch (err) {
+    console.error('[chat] Error:', err);
+    return streamFriendlyErrorResponse(messages);
+  }
 }
